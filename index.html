@@ -5,78 +5,108 @@
     <title>Visio WebRTC</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-stone-50 font-mono text-gray-800 max-w-4xl mx-auto px-5 py-10">
+<body class="bg-stone-50 font-mono text-gray-800 max-w-3xl mx-auto px-5 py-10">
 
-<h2 class="text-green-800 text-xl font-bold mb-8">Visio WebRTC — signaling manuel</h2>
+<h2 class="text-green-800 text-xl font-bold mb-2">Visio WebRTC</h2>
+<p id="status" class="text-xs text-gray-400 mb-8"></p>
 
-<!-- ÉTAPES -->
-<div class="flex flex-wrap gap-2 mb-8">
-    <button id="btn-getmedia"
-            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
-        1. Get Media
-    </button>
-    <button id="btn-createpc" disabled
-            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
-        2. Create PeerConnection
-    </button>
-    <button id="btn-createoffer" disabled
-            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
-        3. Create Offer
-    </button>
-    <button id="btn-setoffer" disabled
-            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
-        4. Set Offer
-    </button>
-    <button id="btn-createanswer" disabled
-            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
-        5. Create Answer
-    </button>
-    <button id="btn-setanswer" disabled
-            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
-        6. Set Answer
-    </button>
-    <button id="btn-hangup" disabled
-            class="px-3 py-2 text-xs bg-white text-red-400 border border-gray-300 cursor-pointer hover:bg-red-50 hover:border-red-400 disabled:opacity-30 disabled:cursor-not-allowed">
-        Hang up
-    </button>
-</div>
+<!-- ── SCREEN : HOME ─────────────────────────────────────────────────── -->
+<div id="screen-home">
 
-<!-- VIDÉOS -->
-<div class="flex flex-wrap gap-5 mb-8">
-    <div>
-        <p class="text-xs text-gray-400 mb-1">Local</p>
-        <video id="local" autoplay muted playsinline
-               class="w-96 max-w-full bg-gray-200 border border-gray-300"></video>
+    <!-- Générer un code -->
+    <div class="mb-6">
+        <p class="text-sm text-gray-500 mb-3">
+            Créez un code et partagez-le à votre interlocuteur.
+        </p>
+        <button id="btn-generate"
+                class="px-4 py-2 text-xs bg-white text-gray-600 border border-gray-300 hover:border-green-700 hover:text-green-800">
+            Générer un code
+        </button>
+
+        <div id="room-code-area" style="display:none" class="mt-4 flex items-center gap-4">
+            <span class="text-3xl font-bold tracking-widest text-green-800" id="room-code-display"></span>
+            <span class="text-xs text-gray-400">← partagez ce code</span>
+        </div>
     </div>
+
+    <hr class="border-gray-200 my-6">
+
+    <!-- Rejoindre avec un code -->
     <div>
-        <p class="text-xs text-gray-400 mb-1">Remote</p>
-        <video id="remote" autoplay playsinline
-               class="w-96 max-w-full bg-gray-200 border border-gray-300"></video>
+        <p class="text-sm text-gray-500 mb-3">
+            Ou rejoignez avec le code reçu.
+        </p>
+        <div class="flex gap-2">
+            <input id="join-code" type="text" maxlength="4" placeholder="Code à 4 chiffres"
+                   class="w-36 px-3 py-2 text-sm bg-white border border-gray-300 outline-none focus:border-green-700 tracking-widest text-center">
+            <button id="btn-join"
+                    class="px-4 py-2 text-xs bg-green-800 text-white border border-green-800 hover:bg-green-700">
+                Rejoindre
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── SCREEN : WAITING ──────────────────────────────────────────────── -->
+<div id="screen-waiting" style="display:none">
+    <div class="flex items-center gap-3 text-gray-500 text-sm">
+        <svg class="animate-spin h-4 w-4 text-green-700" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
+        En attente d'un autre participant…
+    </div>
+    <p class="text-xs text-gray-400 mt-2">Partagez le code à votre interlocuteur</p>
+</div>
+
+<!-- ── SCREEN : CALL ─────────────────────────────────────────────────── -->
+<div id="screen-call" style="display:none">
+
+    <!-- Vidéos -->
+    <div class="flex flex-wrap gap-4 mb-4">
+        <div>
+            <p class="text-xs text-gray-400 mb-1">Vous</p>
+            <video id="local" autoplay muted playsinline
+                   class="w-72 max-w-full bg-gray-200 border border-gray-300"></video>
+        </div>
+        <div>
+            <p class="text-xs text-gray-400 mb-1">Interlocuteur</p>
+            <video id="remote" autoplay playsinline
+                   class="w-72 max-w-full bg-gray-200 border border-gray-300"></video>
+        </div>
+    </div>
+
+    <button id="btn-hangup"
+            class="px-4 py-2 text-xs bg-white text-red-500 border border-red-300 hover:bg-red-50 hover:border-red-500">
+        ✕ Raccrocher
+    </button>
+
+</div>
+
+<!-- ── NOTIFICATION appel entrant ───────────────────────────────────── -->
+<div id="notif" style="display:none"
+     class="fixed top-6 left-1/2 -translate-x-1/2 bg-white border border-gray-300 shadow-md px-6 py-4 flex flex-col items-center gap-3 z-50 w-72">
+    <p id="notif-msg" class="text-sm text-gray-700 text-center"></p>
+    <div class="flex gap-3">
+        <button id="notif-accept"
+                class="px-4 py-1.5 text-xs bg-green-800 text-white hover:bg-green-700">
+            ✓ Accepter
+        </button>
+        <button id="notif-decline"
+                class="px-4 py-1.5 text-xs bg-white text-red-500 border border-red-300 hover:bg-red-50">
+            ✕ Refuser
+        </button>
     </div>
 </div>
 
-<!-- SDP OFFER -->
-<div class="mb-5">
-    <label class="block text-xs text-gray-400 mb-1">
-        Offer SDP (généré ici → copier/coller à l'autre)
-    </label>
-    <textarea id="offer-sdp"
-              placeholder="L'offre SDP apparaîtra ici après 'Create Offer'…"
-              class="w-full h-28 font-mono text-xs bg-white text-gray-600 border border-gray-300 p-1.5 resize-y outline-none focus:border-green-700"></textarea>
-</div>
+<!-- ── LOG ───────────────────────────────────────────────────────────── -->
+<div id="log" class="mt-10 text-xs text-gray-400 border-t border-gray-200 pt-3 space-y-0.5"></div>
 
-<!-- SDP ANSWER -->
-<div class="mb-5">
-    <label class="block text-xs text-gray-400 mb-1">
-        Answer SDP (reçu de l'autre → coller ici, puis 'Set Answer')
-    </label>
-    <textarea id="answer-sdp"
-              placeholder="Coller l'answer SDP reçu ici…"
-              class="w-full h-28 font-mono text-xs bg-white text-gray-600 border border-gray-300 p-1.5 resize-y outline-none focus:border-green-700"></textarea>
-</div>
-
-<!-- LOG -->
-<div id="log" class="text-xs text-gray-400 border-t border-gray-200 pt-3 space-y-0.5"></div>
+<style>
+    #log .ok  { color: #166534; }
+    #log .err { color: #dc2626; }
+</style>
 
 <script src="main.js"></script>
 </body>

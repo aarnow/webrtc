@@ -1,8 +1,23 @@
-// ─── Variables globales ────────────────────────────────────────────────────
-let localStream = null;
-let pc          = null;   // RTCPeerConnection
+// ─── Config ────────────────────────────────────────────────────────────────
+// En prod : remplace par ton URL Render, ex: 'wss://webrtc-signaling.onrender.com'
+const WS_URL = window.location.hostname === 'localhost'
+    ? 'ws://localhost:8080'
+    : 'wss://webrtc-signaling-8snc.onrender.com';
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+const ICE_SERVERS = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+    ]
+};
+
+// ─── État ──────────────────────────────────────────────────────────────────
+let ws          = null;
+let pc          = null;
+let localStream = null;
+let isInitiator = false;
+
+// ─── Helpers UI ────────────────────────────────────────────────────────────
 function log(msg, type = '') {
     const d = document.createElement('div');
     d.textContent = '▶ ' + msg;
@@ -10,141 +25,189 @@ function log(msg, type = '') {
     document.getElementById('log').prepend(d);
 }
 
-function enable(...ids) {
-    ids.forEach(id => {
-        const b = document.getElementById(id);
-        b.disabled = false;
+function setStatus(msg) {
+    document.getElementById('status').textContent = msg;
+}
+
+function showScreen(id) {
+    ['screen-home', 'screen-waiting', 'screen-call'].forEach(s => {
+        document.getElementById(s).style.display = s === id ? 'block' : 'none';
     });
 }
 
-function disable(...ids) {
-    ids.forEach(id => {
-        const b = document.getElementById(id);
-        b.disabled = true;
-    });
+function showNotif(msg, onAccept, onDecline) {
+    const notif = document.getElementById('notif');
+    document.getElementById('notif-msg').textContent = msg;
+    notif.style.display = 'flex';
+    document.getElementById('notif-accept').onclick = () => {
+        notif.style.display = 'none';
+        onAccept();
+    };
+    document.getElementById('notif-decline').onclick = () => {
+        notif.style.display = 'none';
+        onDecline();
+    };
 }
 
-// ─── 1. GET MEDIA ──────────────────────────────────────────────────────────
-document.getElementById('btn-getmedia').onclick = async () => {
+// ─── WebSocket ─────────────────────────────────────────────────────────────
+function connectWS(code) {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+        log('WebSocket connecté', 'ok');
+        ws.send(JSON.stringify({ type: 'join', code }));
+    };
+
+    ws.onmessage = async e => {
+        const msg = JSON.parse(e.data);
+
+        switch (msg.type) {
+
+            case 'waiting':
+                setStatus('En attente d\'un autre participant…');
+                showScreen('screen-waiting');
+                log('Room créée — en attente du pair');
+                break;
+
+            case 'joined':
+                isInitiator = msg.initiator;
+                log(`Pair connecté — rôle : ${isInitiator ? 'initiateur' : 'répondant'}`);
+
+                if (isInitiator) {
+                    // A lance automatiquement l'appel
+                    setStatus('Pair trouvé — lancement de l\'appel…');
+                    showScreen('screen-call');
+                    await startCall();
+                } else {
+                    // B reçoit une notification
+                    showNotif(
+                        '📹 Un pair souhaite vous appeler',
+                        async () => {
+                            setStatus('Connexion en cours…');
+                            showScreen('screen-call');
+                            log('Appel accepté');
+                        },
+                        () => {
+                            ws.close();
+                            showScreen('screen-home');
+                            log('Appel refusé');
+                        }
+                    );
+                }
+                break;
+
+            case 'offer':
+                log('Offer reçu');
+                await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                send({ type: 'answer', sdp: pc.localDescription });
+                log('Answer envoyé', 'ok');
+                break;
+
+            case 'answer':
+                log('Answer reçu');
+                await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+                break;
+
+            case 'candidate':
+                if (msg.candidate && pc) {
+                    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                }
+                break;
+
+            case 'room-full':
+                log('Room pleine — réessayez avec un autre code', 'err');
+                showScreen('screen-home');
+                break;
+
+            case 'peer-left':
+                log('Le pair a quitté la session', 'err');
+                setStatus('Le pair a quitté la session');
+                hangup(false);
+                break;
+        }
+    };
+
+    ws.onerror = () => log('Erreur WebSocket', 'err');
+    ws.onclose = () => log('WebSocket fermé');
+}
+
+function send(msg) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msg));
+    }
+}
+
+// ─── WebRTC ─────────────────────────────────────────────────────────────────
+async function startCall() {
+    pc = new RTCPeerConnection(ICE_SERVERS);
+
+    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+    pc.ontrack = e => {
+        document.getElementById('remote').srcObject = e.streams[0];
+        log('Flux distant reçu', 'ok');
+    };
+
+    // Trickle ICE : envoyer chaque candidat dès qu'il est prêt
+    pc.onicecandidate = e => {
+        if (e.candidate) {
+            send({ type: 'candidate', candidate: e.candidate });
+        }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+        const s = pc.iceConnectionState;
+        log('ICE state : ' + s, s === 'connected' || s === 'completed' ? 'ok' : '');
+        if (s === 'connected' || s === 'completed') setStatus('Connecté ✓');
+    };
+
+    if (isInitiator) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        send({ type: 'offer', sdp: pc.localDescription });
+        log('Offer envoyé', 'ok');
+    }
+}
+
+function hangup(notifyPeer = true) {
+    if (pc) { pc.close(); pc = null; }
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    document.getElementById('local').srcObject  = null;
+    document.getElementById('remote').srcObject = null;
+    if (notifyPeer && ws) ws.close();
+    showScreen('screen-home');
+    setStatus('');
+}
+
+// ─── Boutons ───────────────────────────────────────────────────────────────
+
+// Générer un code à 4 chiffres
+document.getElementById('btn-generate').onclick = async () => {
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    document.getElementById('room-code-display').textContent = code;
+    document.getElementById('join-code').value = code;
+    document.getElementById('room-code-area').style.display = 'block';
+    log(`Code room : ${code}`);
+};
+
+// Rejoindre
+document.getElementById('btn-join').onclick = async () => {
+    const code = document.getElementById('join-code').value.trim();
+    if (!code || code.length < 4) { log('Entrez un code à 4 chiffres', 'err'); return; }
+
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('local').srcObject = localStream;
-        log('GetMedia OK — caméra + micro actifs', 'ok');
-        enable('btn-createpc');
-        disable('btn-getmedia');
+        log('Caméra active', 'ok');
     } catch (e) {
-        log('GetMedia ERREUR : ' + e.message, 'err');
+        log('Erreur caméra : ' + e.message, 'err');
+        return;
     }
+
+    connectWS(code);
 };
 
-// ─── 2. CREATE PEER CONNECTION ─────────────────────────────────────────────
-document.getElementById('btn-createpc').onclick = () => {
-    pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-
-    // Ajouter les pistes locales
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-    // Réception du flux distant
-    pc.ontrack = e => {
-        document.getElementById('remote').srcObject = e.streams[0];
-        log('ontrack — flux distant reçu', 'ok');
-    };
-
-    pc.oniceconnectionstatechange = () =>
-        log('ICE state : ' + pc.iceConnectionState,
-            pc.iceConnectionState === 'connected' ? 'ok' : '');
-
-    log('CreatePeerConnection OK', 'ok');
-    enable('btn-createoffer', 'btn-setoffer');
-    disable('btn-createpc');
-};
-
-// ─── 3. CREATE OFFER (rôle initiateur) ────────────────────────────────────
-document.getElementById('btn-createoffer').onclick = async () => {
-    // 1) Créer l'offre et la poser comme description locale
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    // 2) Attendre que le gathering ICE soit terminé (SDP complet avec candidats)
-    await waitGatheringComplete();
-
-    // 3) Afficher le SDP final
-    document.getElementById('offer-sdp').value = JSON.stringify(pc.localDescription);
-    log("CreateOffer OK — copiez l'Offer SDP et envoyez-le au pair", 'ok');
-    disable('btn-createoffer', 'btn-setoffer');
-    enable('btn-setanswer', 'btn-hangup');
-};
-
-// ─── 4. SET OFFER (rôle répondant) ────────────────────────────────────────
-document.getElementById('btn-setoffer').onclick = async () => {
-    const raw = document.getElementById('offer-sdp').value.trim();
-    if (!raw) { log("SetOffer : collez d'abord l'Offer SDP reçu", 'err'); return; }
-
-    const offer = JSON.parse(raw);
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    log('SetOffer OK — remote description posée', 'ok');
-    disable('btn-createoffer', 'btn-setoffer');
-    enable('btn-createanswer', 'btn-hangup');
-};
-
-// ─── 5. CREATE ANSWER (rôle répondant) ────────────────────────────────────
-document.getElementById('btn-createanswer').onclick = async () => {
-    // 1) Créer la réponse et la poser comme description locale
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    // 2) Attendre la fin du gathering ICE
-    await waitGatheringComplete();
-
-    // 3) Afficher le SDP final
-    document.getElementById('answer-sdp').value = JSON.stringify(pc.localDescription);
-    log("CreateAnswer OK — copiez l'Answer SDP et renvoyez-le à l'initiateur", 'ok');
-    disable('btn-createanswer');
-};
-
-// ─── 6. SET ANSWER (rôle initiateur) ──────────────────────────────────────
-document.getElementById('btn-setanswer').onclick = async () => {
-    const raw = document.getElementById('answer-sdp').value.trim();
-    if (!raw) { log("SetAnswer : collez d'abord l'Answer SDP reçu", 'err'); return; }
-
-    const answer = JSON.parse(raw);
-    await pc.setRemoteDescription(new RTCSessionDescription(answer));
-    log('SetAnswer OK — connexion en cours…', 'ok');
-    disable('btn-setanswer');
-};
-
-// ─── HANG UP ──────────────────────────────────────────────────────────────
-document.getElementById('btn-hangup').onclick = () => {
-    pc.close(); pc = null;
-    localStream.getTracks().forEach(t => t.stop());
-    document.getElementById('local').srcObject  = null;
-    document.getElementById('remote').srcObject = null;
-    document.getElementById('offer-sdp').value  = '';
-    document.getElementById('answer-sdp').value = '';
-    log('Hang up — connexion fermée');
-    disable('btn-createpc', 'btn-createoffer', 'btn-setoffer',
-        'btn-createanswer', 'btn-setanswer', 'btn-hangup');
-    enable('btn-getmedia');
-};
-
-// ─── Attendre la fin du gathering ICE ─────────────────────────────────────
-// On attend l'événement icegatheringstatechange === 'complete'
-// pour avoir un SDP avec tous les candidats intégrés (trickle ICE désactivé)
-function waitGatheringComplete() {
-    return new Promise(resolve => {
-        if (pc.iceGatheringState === 'complete') {
-            resolve();
-            return;
-        }
-        pc.addEventListener('icegatheringstatechange', function handler() {
-            if (pc.iceGatheringState === 'complete') {
-                pc.removeEventListener('icegatheringstatechange', handler);
-                resolve();
-            }
-        });
-        // Timeout de sécurité : 5 secondes
-        setTimeout(resolve, 5000);
-    });
-}
+// Hang up
+document.getElementById('btn-hangup').onclick = () => hangup(true);
