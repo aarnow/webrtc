@@ -1,8 +1,6 @@
 // ─── Config ────────────────────────────────────────────────────────────────
 // En prod : remplace par ton URL Render, ex: 'wss://webrtc-signaling.onrender.com'
-const WS_URL = window.location.hostname === 'localhost'
-    ? 'ws://localhost:8080'
-    : 'wss://webrtc-signaling-8snc.onrender.com';
+const WS_URL = 'wss://webrtc-signaling-8snc.onrender.com';
 
 const ICE_SERVERS = {
     iceServers: [
@@ -74,10 +72,10 @@ function connectWS(code) {
                 log(`Pair connecté — rôle : ${isInitiator ? 'initiateur' : 'répondant'}`);
 
                 if (isInitiator) {
-                    // A lance automatiquement l'appel
-                    setStatus('Pair trouvé — lancement de l\'appel…');
+                    // A prépare le pc mais attend que B soit prêt
+                    setStatus('Pair trouvé — en attente de l\'acceptation…');
                     showScreen('screen-call');
-                    await startCall();
+                    await startCall();  // crée pc, mais n'envoie pas encore l'offer
                 } else {
                     // B reçoit une notification
                     showNotif(
@@ -86,6 +84,8 @@ function connectWS(code) {
                             setStatus('Connexion en cours…');
                             showScreen('screen-call');
                             log('Appel accepté');
+                            await startCall();         // crée pc côté B
+                            send({ type: 'ready' });   // signale à A qu'il peut envoyer l'offer
                         },
                         () => {
                             ws.close();
@@ -94,6 +94,16 @@ function connectWS(code) {
                         }
                     );
                 }
+                break;
+
+            case 'ready':
+                // B a accepté — A envoie maintenant l'offer
+                log('Pair prêt — envoi de l\'offer');
+                setStatus('Lancement de l\'appel…');
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                send({ type: 'offer', sdp: pc.localDescription });
+                log('Offer envoyé', 'ok');
                 break;
 
             case 'offer':
@@ -164,10 +174,8 @@ async function startCall() {
     };
 
     if (isInitiator) {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        send({ type: 'offer', sdp: pc.localDescription });
-        log('Offer envoyé', 'ok');
+        // L'offer sera envoyé à la réception du message 'ready' de B
+        return;
     }
 }
 
