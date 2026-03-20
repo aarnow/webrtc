@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Visio WebRTC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-stone-50 font-mono text-gray-800 max-w-4xl mx-auto px-5 py-10">
+
+<h2 class="text-green-800 text-xl font-bold mb-8">Visio WebRTC — signaling manuel</h2>
+
+<!-- ÉTAPES -->
+<div class="flex flex-wrap gap-2 mb-8">
+    <button id="btn-getmedia"
+            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
+        1. Get Media
+    </button>
+    <button id="btn-createpc" disabled
+            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
+        2. Create PeerConnection
+    </button>
+    <button id="btn-createoffer" disabled
+            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
+        3. Create Offer
+    </button>
+    <button id="btn-setoffer" disabled
+            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
+        4. Set Offer
+    </button>
+    <button id="btn-createanswer" disabled
+            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
+        5. Create Answer
+    </button>
+    <button id="btn-setanswer" disabled
+            class="px-3 py-2 text-xs bg-white text-gray-600 border border-gray-300 cursor-pointer hover:bg-gray-50 hover:border-green-700 hover:text-green-800 disabled:opacity-30 disabled:cursor-not-allowed">
+        6. Set Answer
+    </button>
+    <button id="btn-hangup" disabled
+            class="px-3 py-2 text-xs bg-white text-red-400 border border-gray-300 cursor-pointer hover:bg-red-50 hover:border-red-400 disabled:opacity-30 disabled:cursor-not-allowed">
+        Hang up
+    </button>
+</div>
+
+<!-- VIDÉOS -->
+<div class="flex flex-wrap gap-5 mb-8">
+    <div>
+        <p class="text-xs text-gray-400 mb-1">Local</p>
+        <video id="local" autoplay muted playsinline
+               class="w-96 max-w-full bg-gray-200 border border-gray-300"></video>
+    </div>
+    <div>
+        <p class="text-xs text-gray-400 mb-1">Remote</p>
+        <video id="remote" autoplay playsinline
+               class="w-96 max-w-full bg-gray-200 border border-gray-300"></video>
+    </div>
+</div>
+
+<!-- SDP OFFER -->
+<div class="mb-5">
+    <label class="block text-xs text-gray-400 mb-1">
+        Offer SDP (généré ici → copier/coller à l'autre)
+    </label>
+    <textarea id="offer-sdp"
+              placeholder="L'offre SDP apparaîtra ici après 'Create Offer'…"
+              class="w-full h-28 font-mono text-xs bg-white text-gray-600 border border-gray-300 p-1.5 resize-y outline-none focus:border-green-700"></textarea>
+</div>
+
+<!-- SDP ANSWER -->
+<div class="mb-5">
+    <label class="block text-xs text-gray-400 mb-1">
+        Answer SDP (reçu de l'autre → coller ici, puis 'Set Answer')
+    </label>
+    <textarea id="answer-sdp"
+              placeholder="Coller l'answer SDP reçu ici…"
+              class="w-full h-28 font-mono text-xs bg-white text-gray-600 border border-gray-300 p-1.5 resize-y outline-none focus:border-green-700"></textarea>
+</div>
+
+<!-- LOG -->
+<div id="log" class="text-xs text-gray-400 border-t border-gray-200 pt-3 space-y-0.5"></div>
+
+<script src="main.js"></script>
+</body>
+</html>
